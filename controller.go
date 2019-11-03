@@ -76,24 +76,24 @@ func (sc *serviceController) handleServiceUpdate(oldSvc, newSvc *corev1.Service)
 		"service": newSvc.Name,
 	}).Info("service update")
 
-	oldIPs := getLoadbalancerIPs(oldSvc)
+	// oldIPs := getLoadbalancerIPs(oldSvc)
 	newIPs := getLoadbalancerIPs(newSvc)
 
-	if len(oldIPs) != len(newIPs) {
-		return sc.handleServiceIPs(newSvc, newIPs)
-	}
+	// if len(oldIPs) != len(newIPs) {
+	// 	return sc.handleServiceIPs(newSvc, newIPs)
+	// }
 
-	for i := range oldIPs {
-		if oldIPs[i] != newIPs[i] {
-			return sc.handleServiceIPs(newSvc, newIPs)
-		}
-	}
+	// for i := range oldIPs {
+	// 	if oldIPs[i] != newIPs[i] {
+	// 		return sc.handleServiceIPs(newSvc, newIPs)
+	// 	}
+	// }
 
-	sc.logger.WithFields(logrus.Fields{
-		"service": newSvc.Name,
-	}).Info("service unchanged")
+	// sc.logger.WithFields(logrus.Fields{
+	// 	"service": newSvc.Name,
+	// }).Info("service unchanged")
 
-	return nil
+	return sc.handleServiceIPs(newSvc, newIPs)
 }
 
 func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []string) error {
@@ -122,7 +122,7 @@ func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 		return fmt.Errorf("service IPs %s not found in floating IP list", svcIPs)
 	}
 
-	nodes, err := sc.getServiceNode(svc)
+	nodes, err := sc.getServiceNodes(svc)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,11 @@ func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 
 		// TODO: use multierr?
 		if err := sc.attachFIPToNode(fip, electedNode); err != nil {
-			sc.logger.Errorf("could not attach %s to node %s: %s", fip.IP, electedNode, err)
+			sc.logger.WithError(err).WithFields(logrus.Fields{
+				"fip":     fip.IP,
+				"service": svc.Name,
+				"node":    electedNode,
+			}).Errorf("could not attach floating IP")
 		}
 		sc.logger.WithFields(logrus.Fields{
 			"fip":     fip.IP,
@@ -158,7 +162,7 @@ func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 	return nil
 }
 
-func (sc *serviceController) getServiceNode(svc *corev1.Service) ([]string, error) {
+func (sc *serviceController) getServiceNodes(svc *corev1.Service) ([]string, error) {
 	pods, err := sc.k8s.CoreV1().Pods("").List(metav1.ListOptions{
 		LabelSelector: labels.Set(svc.Spec.Selector).String(),
 	})
