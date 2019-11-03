@@ -50,7 +50,7 @@ func (sc *serviceController) run() {
 			if !ok {
 				sc.logger.Errorf("received unexpected old object type")
 			}
-			newSvc, ok := oldObj.(*corev1.Service)
+			newSvc, ok := newObj.(*corev1.Service)
 			if !ok {
 				sc.logger.Errorf("received unexpected new object type")
 			}
