@@ -1,5 +1,7 @@
 FROM golang:1.13-alpine AS build
 
+ENV CGO_ENABLED=0
+
 RUN apk add --update git
 
 WORKDIR /app
