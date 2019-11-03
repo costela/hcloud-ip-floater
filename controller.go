@@ -39,7 +39,7 @@ func (sc *serviceController) run() {
 		AddFunc: func(newObj interface{}) {
 			newSvc, ok := newObj.(*corev1.Service)
 			if !ok {
-				sc.logger.Errorf("received unexpected object type")
+				sc.logger.Errorf("received unexpected object type: %T", newObj)
 			}
 			if err := sc.handleServiceAdd(newSvc); err != nil {
 				sc.logger.WithError(err).Error("could not handle new service")
@@ -48,11 +48,11 @@ func (sc *serviceController) run() {
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			oldSvc, ok := oldObj.(*corev1.Service)
 			if !ok {
-				sc.logger.Errorf("received unexpected old object type")
+				sc.logger.Errorf("received unexpected old object type: %T", oldObj)
 			}
 			newSvc, ok := newObj.(*corev1.Service)
 			if !ok {
-				sc.logger.Errorf("received unexpected new object type")
+				sc.logger.Errorf("received unexpected new object type: %T", newObj)
 			}
 			if err := sc.handleServiceUpdate(oldSvc, newSvc); err != nil {
 				sc.logger.WithError(err).Error("could not handle service update")
