@@ -1,0 +1,28 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hcloud-ip-floater
+  labels:
+    app.kubernetes.io/name: hcloud-ip-floater
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hcloud-ip-floater
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hcloud-ip-floater
+    spec:
+      serviceAccountName: hcloud-ip-floater
+      containers:
+        - name: hcloud-ip-floater
+          image: costela/hcloud-ip-floater  # tag provided in kustomization.yaml
+          envFrom:
+            - secretRef:
+                name: hcloud-ip-floater-secret-env
+            - configMapRef:
+                name: hcloud-ip-floater-config-env

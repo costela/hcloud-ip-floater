@@ -1,0 +1,15 @@
+---
+namespace: hcloud-ip-floater
+images:
+  - name: nginx-pod
+    newTag: v0.1.0
+# secretGenerator:
+#   - name: hcloud-ip-floater-secret-env
+#     env: env.txt
+configMapGenerator:
+  - name: hcloud-ip-floater-config-env
+    literals: []
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - deployment.yaml
