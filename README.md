@@ -14,12 +14,13 @@ The controller can be installed to a cluster using [kustomize](https://kustomize
 following `kustomization.yaml`:
 
 ```yaml
+namespace: hcloud-ip-floater
 bases:
   - github.com/costela/hcloud-ip-floater/deploy?ref=v0.1.0
 secretGenerator:
   - name: hcloud-ip-floater-secret-env
     literals:
-        HCLOUD_IP_FLOATER_HCLOUD_TOKEN=<YOUR HCLOUD API TOKEN HERE>
+      - HCLOUD_IP_FLOATER_HCLOUD_TOKEN=<YOUR HCLOUD API TOKEN HERE>
 ```
 
 The provided deployment manifest expects a secret named `hcloud-ip-floater-secret-env` to exist, which is the
