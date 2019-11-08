@@ -1,3 +1,9 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/costela/hcloud-ip-floater)](https://goreportcard.com/report/github.com/costela/hcloud-ip-floater)
+![Docker Automated build](https://img.shields.io/docker/automated/costela/hcloud-ip-floater.svg)
+![Docker Build Status](https://img.shields.io/docker/build/costela/hcloud-ip-floater.svg)
+![Image Info](https://images.microbadger.com/badges/image/costela/hcloud-ip-floater.svg)
+
+
 # Hetzner Cloud™ IP Floater
 
 This small [kubernetes](https://kubernetes.io/) controller manages the attachment of
