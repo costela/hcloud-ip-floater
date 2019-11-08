@@ -2,9 +2,6 @@ package main
 
 import (
 	"os"
-	"os/user"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/hetznercloud/hcloud-go/hcloud"
@@ -57,14 +54,14 @@ func main() {
 	} else {
 		cfg, err := clientcmd.BuildConfigFromKubeconfigGetter("", clientcmd.NewDefaultClientConfigLoadingRules().Load)
 		if err != nil {
-			logger.Fatalf("could not init in-cluster config: %w", err)
+			logger.Fatalf("could not init in-cluster config: %s", err)
 		}
 		k8sCfg = cfg
 	}
 
 	k8s, err := kubernetes.NewForConfig(k8sCfg)
 	if err != nil {
-		logger.Fatalf("could not init k8s client: %w", err)
+		logger.Fatalf("could not init k8s client: %s", err)
 	}
 
 	hcc := hcloud.NewClient(
@@ -81,15 +78,4 @@ func main() {
 	}
 
 	sc.run()
-}
-
-func expandHome(path string) string {
-	if !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	user, err := user.Current()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(user.HomeDir, strings.TrimPrefix(path, "~/"))
 }

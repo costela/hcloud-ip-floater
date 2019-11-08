@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/hetznercloud/hcloud-go/hcloud"
@@ -16,95 +17,270 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+type podInformerType struct {
+	factory informers.SharedInformerFactory
+	stopper chan struct{}
+}
+
 type serviceController struct {
-	logger logrus.FieldLogger
-	k8s    *kubernetes.Clientset
-	hcc    *hcloud.Client
-	sf     singleflight.Group
+	logger         logrus.FieldLogger
+	k8s            *kubernetes.Clientset
+	hcc            *hcloud.Client
+	sf             singleflight.Group
+	svcInformer    informers.SharedInformerFactory
+	podInformers   map[string]podInformerType
+	podInformersMu sync.RWMutex
 }
 
 func (sc *serviceController) run() {
-	factory := informers.NewSharedInformerFactoryWithOptions(
+	sc.svcInformer = informers.NewSharedInformerFactoryWithOptions(
 		sc.k8s,
 		5*time.Minute,
 		informers.WithTweakListOptions(func(listOpts *metav1.ListOptions) {
 			listOpts.LabelSelector = config.ServiceLabelSelector
 		}),
 	)
-	informer := factory.Core().V1().Services().Informer()
+	sc.podInformers = make(map[string]podInformerType)
+
+	svcInformer := sc.svcInformer.Core().V1().Services().Informer()
 	stopper := make(chan struct{})
 	defer close(stopper)
 
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	svcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(newObj interface{}) {
 			newSvc, ok := newObj.(*corev1.Service)
 			if !ok {
 				sc.logger.Errorf("received unexpected object type: %T", newObj)
+				return
+			}
+			if sc.unsupportedServiceType(newSvc) {
+				return
 			}
 			if err := sc.handleServiceAdd(newSvc); err != nil {
-				sc.logger.WithError(err).Error("could not handle new service")
+				sc.logger.WithError(err).Error("error handling new service")
 			}
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			oldSvc, ok := oldObj.(*corev1.Service)
 			if !ok {
 				sc.logger.Errorf("received unexpected old object type: %T", oldObj)
+				return
 			}
 			newSvc, ok := newObj.(*corev1.Service)
 			if !ok {
 				sc.logger.Errorf("received unexpected new object type: %T", newObj)
+				return
+			}
+			if sc.unsupportedServiceType(newSvc) {
+				return
 			}
 			if err := sc.handleServiceUpdate(oldSvc, newSvc); err != nil {
-				sc.logger.WithError(err).Error("could not handle service update")
+				sc.logger.WithError(err).Error("error handling service update")
+			}
+		},
+		DeleteFunc: func(oldObj interface{}) {
+			oldSvc, ok := oldObj.(*corev1.Service)
+			if !ok {
+				sc.logger.Errorf("received unexpected old object type: %T", oldObj)
+				return
+			}
+			if sc.unsupportedServiceType(oldSvc) {
+				return
+			}
+			if err := sc.removePodInformer(oldSvc); err != nil {
+				sc.logger.WithError(err).Error("error removing pod informer")
 			}
 		},
 	})
 
-	informer.Run(stopper)
+	svcInformer.Run(stopper)
 }
 
 func (sc *serviceController) handleServiceAdd(svc *corev1.Service) error {
 	sc.logger.WithFields(logrus.Fields{
-		"service": svc.Name,
+		"namespace": svc.Namespace,
+		"service":   svc.Name,
 	}).Info("new service")
 
-	return sc.handleServiceIPs(svc, getLoadbalancerIPs(svc))
+	// we do not need to call handleServiceIPs here, because it will be triggered by the pod detection
+	return sc.addPodInformer(svc)
 }
 
 func (sc *serviceController) handleServiceUpdate(oldSvc, newSvc *corev1.Service) error {
 	sc.logger.WithFields(logrus.Fields{
-		"service": newSvc.Name,
+		"namespace": newSvc.Namespace,
+		"service":   newSvc.Name,
 	}).Info("service update")
 
-	// oldIPs := getLoadbalancerIPs(oldSvc)
+	oldIPs := getLoadbalancerIPs(oldSvc)
 	newIPs := getLoadbalancerIPs(newSvc)
 
-	// if len(oldIPs) != len(newIPs) {
-	// 	return sc.handleServiceIPs(newSvc, newIPs)
-	// }
+	if len(oldIPs) != len(newIPs) {
+		return sc.handleServiceIPs(newSvc, newIPs)
+	}
 
-	// for i := range oldIPs {
-	// 	if oldIPs[i] != newIPs[i] {
-	// 		return sc.handleServiceIPs(newSvc, newIPs)
-	// 	}
-	// }
+	for i := range oldIPs {
+		if oldIPs[i] != newIPs[i] {
+			return sc.handleServiceIPs(newSvc, newIPs)
+		}
+	}
 
-	// sc.logger.WithFields(logrus.Fields{
-	// 	"service": newSvc.Name,
-	// }).Info("service unchanged")
+	if labels.Set(oldSvc.Spec.Selector).String() != labels.Set(newSvc.Spec.Selector).String() {
+		return sc.replacePodInformer(oldSvc, newSvc)
+	}
 
-	return sc.handleServiceIPs(newSvc, newIPs)
+	sc.logger.WithFields(logrus.Fields{
+		"namespace": newSvc.Namespace,
+		"service":   newSvc.Name,
+	}).Info("service unchanged")
+
+	return nil
 }
 
-func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []string) error {
-	if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
-		sc.logger.WithFields(logrus.Fields{
-			"service": svc.Name,
-		}).Info("skipping non-LoadBalancer service")
+func (sc *serviceController) addPodInformer(svc *corev1.Service) error {
+	sc.logger.WithFields(logrus.Fields{
+		"namespace": svc.Namespace,
+		"service":   svc.Name,
+	}).Info("adding pod informer")
 
+	svcKey, err := cache.MetaNamespaceKeyFunc(svc)
+	if err != nil {
+		return err
+	}
+
+	podInformerFactory := informers.NewSharedInformerFactoryWithOptions(
+		sc.k8s,
+		5*time.Minute,
+		informers.WithTweakListOptions(func(listOpts *metav1.ListOptions) {
+			listOpts.LabelSelector = labels.Set(svc.Spec.Selector).String()
+		}),
+	)
+	podInformer := podInformerFactory.Core().V1().Pods().Informer()
+
+	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		// we ignore Add/Delete because we're only interested in state changes (to and from "ready")
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldPod, ok := oldObj.(*corev1.Pod)
+			if !ok {
+				sc.logger.Errorf("received unexpected object type: %T", oldObj)
+				return
+			}
+			newPod, ok := newObj.(*corev1.Pod)
+			if !ok {
+				sc.logger.Errorf("received unexpected object type: %T", newObj)
+				return
+			}
+
+			if err := sc.handlePodUpdate(svcKey, oldPod, newPod); err != nil {
+				sc.logger.WithError(err).Error("could not handle pod update")
+			}
+		},
+	})
+
+	stopper := make(chan struct{})
+
+	sc.podInformersMu.Lock()
+	defer sc.podInformersMu.Unlock()
+
+	sc.podInformers[svcKey] = podInformerType{
+		factory: podInformerFactory,
+		stopper: stopper,
+	}
+
+	go podInformer.Run(stopper)
+
+	return nil
+}
+
+func (sc *serviceController) removePodInformer(svc *corev1.Service) error {
+	svcKey, err := cache.MetaNamespaceKeyFunc(svc)
+	if err != nil {
+		return err
+	}
+
+	sc.podInformersMu.Lock()
+	defer sc.podInformersMu.Unlock()
+
+	podInformer, ok := sc.podInformers[svcKey]
+	if !ok {
+		return nil // ignore for now
+	}
+
+	sc.logger.WithFields(logrus.Fields{
+		"namespace": svc.Namespace,
+		"service":   svc.Name,
+	}).Info("removing pod informer")
+
+	delete(sc.podInformers, svcKey)
+	close(podInformer.stopper)
+
+	return nil
+}
+
+func (sc *serviceController) replacePodInformer(oldSvc, newSvc *corev1.Service) error {
+	// TODO: too simple: we might miss events between remove/add; should fetch old/replace/close
+	if err := sc.removePodInformer(oldSvc); err != nil {
+		return err
+	}
+
+	if err := sc.addPodInformer(newSvc); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (sc *serviceController) handlePodUpdate(svcKey string, oldPod, newPod *corev1.Pod) error {
+	obj, _, err := sc.svcInformer.Core().V1().Services().Informer().GetIndexer().GetByKey(svcKey)
+	if err != nil {
+		return err
+	}
+
+	svc, ok := obj.(*corev1.Service)
+	if !ok {
+		return fmt.Errorf("got unexpected obj type %T", obj)
+	}
+
+	if podIsReady(oldPod) == podIsReady(newPod) {
+		sc.logger.WithFields(logrus.Fields{
+			"namespace": svc.Namespace,
+			"service":   svc.Name,
+			"pod":       newPod.Name,
+		}).Debug("pod readiness unchanged")
 		return nil
 	}
 
+	if podIsReady(oldPod) {
+		sc.logger.WithFields(logrus.Fields{
+			"namespace": svc.Namespace,
+			"service":   svc.Name,
+			"pod":       oldPod.Name,
+		}).Info("pod became not-ready")
+	} else if podIsReady(newPod) {
+		sc.logger.WithFields(logrus.Fields{
+			"namespace": svc.Namespace,
+			"service":   svc.Name,
+			"pod":       newPod.Name,
+		}).Info("pod became ready")
+	} else {
+		return nil // some other uninteresting state transition
+	}
+
+	ips := getLoadbalancerIPs(svc)
+	return sc.handleServiceIPs(svc, ips)
+}
+
+func podIsReady(pod *corev1.Pod) bool {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []string) error {
+	// TODO: use util/workqueue to avoid blocking informer if hcloud API is slow
 	fipAllocation, err := sc.getFIPAllocations()
 	if err != nil {
 		return err
@@ -122,13 +298,17 @@ func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 		return fmt.Errorf("service IPs %s not found in floating IP list", svcIPs)
 	}
 
-	nodes, err := sc.getServiceNodes(svc)
+	nodes, err := sc.getServiceReadyNodes(svc)
 	if err != nil {
 		return err
 	}
 
 	if len(nodes) == 0 {
-		return fmt.Errorf("service %s has no pods", svc.Name)
+		sc.logger.WithFields(logrus.Fields{
+			"namespace": svc.Namespace,
+			"service":   svc.Name,
+		}).Info("ignoring service with no ready pods")
+		return nil
 	}
 
 	// TODO: this is probably too simple, but should at least be deterministic
@@ -137,9 +317,10 @@ func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 	for _, fip := range usableFIPs {
 		if electedNode == fip.Server.Name {
 			sc.logger.WithFields(logrus.Fields{
-				"fip":     fip.IP,
-				"service": svc.Name,
-				"node":    electedNode,
+				"fip":       fip.IP,
+				"namespace": svc.Namespace,
+				"service":   svc.Name,
+				"node":      electedNode,
 			}).Info("floating IP already attached")
 			continue
 		}
@@ -147,32 +328,48 @@ func (sc *serviceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 		// TODO: use multierr?
 		if err := sc.attachFIPToNode(fip, electedNode); err != nil {
 			sc.logger.WithError(err).WithFields(logrus.Fields{
-				"fip":     fip.IP,
-				"service": svc.Name,
-				"node":    electedNode,
+				"fip":       fip.IP,
+				"namespace": svc.Namespace,
+				"service":   svc.Name,
+				"node":      electedNode,
 			}).Errorf("could not attach floating IP")
 		}
 		sc.logger.WithFields(logrus.Fields{
-			"fip":     fip.IP,
-			"service": svc.Name,
-			"node":    electedNode,
+			"fip":       fip.IP,
+			"namespace": svc.Namespace,
+			"service":   svc.Name,
+			"node":      electedNode,
 		}).Info("floating IP attached")
 	}
 
 	return nil
 }
 
-func (sc *serviceController) getServiceNodes(svc *corev1.Service) ([]string, error) {
-	pods, err := sc.k8s.CoreV1().Pods("").List(metav1.ListOptions{
-		LabelSelector: labels.Set(svc.Spec.Selector).String(),
-	})
+// getServiceReadyNodes gets all nodes where ready pods are scheduled
+func (sc *serviceController) getServiceReadyNodes(svc *corev1.Service) ([]string, error) {
+	svcKey, err := cache.MetaNamespaceKeyFunc(svc)
 	if err != nil {
 		return nil, err
 	}
 
-	nodes := make([]string, len(pods.Items))
-	for i, pod := range pods.Items {
-		nodes[i] = pod.Spec.NodeName
+	sc.podInformersMu.RLock()
+	podInformerFactory, ok := sc.podInformers[svcKey]
+	sc.podInformersMu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("could not find informer factory for svc %s", svcKey)
+	}
+
+	pods, err := podInformerFactory.factory.Core().V1().Pods().Lister().List(labels.NewSelector())
+	if err != nil {
+		return nil, err
+	}
+
+	nodes := make([]string, 0, len(pods))
+	for _, pod := range pods {
+		if podIsReady(pod) {
+			nodes = append(nodes, pod.Spec.NodeName)
+		}
 	}
 
 	return nodes, nil
@@ -219,8 +416,20 @@ func (sc *serviceController) getFIPAllocations() (fipAllocation, error) {
 	return res.(fipAllocation), err
 }
 
+func (sc *serviceController) unsupportedServiceType(svc *corev1.Service) bool {
+	if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+		sc.logger.WithFields(logrus.Fields{
+			"namespace": svc.Namespace,
+			"service":   svc.Name,
+		}).Info("skipping non-LoadBalancer service")
+
+		return true
+	}
+	return false
+}
+
 func getLoadbalancerIPs(svc *corev1.Service) []string {
-	ips := make([]string, 0)
+	ips := make([]string, 0, len(svc.Status.LoadBalancer.Ingress))
 
 	// ignore svc.Spec.LoadBalancerIP; it's provided as a request and may be ignored by k8s
 
