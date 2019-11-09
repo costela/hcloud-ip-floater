@@ -1,7 +1,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/costela/hcloud-ip-floater)](https://goreportcard.com/report/github.com/costela/hcloud-ip-floater)
-![Docker Automated build](https://img.shields.io/docker/cloud/automated/costela/hcloud-ip-floater.svg)
-![Docker Build Status](https://img.shields.io/docker/cloud/build/costela/hcloud-ip-floater.svg)
-![Image Info](https://images.microbadger.com/badges/image/costela/hcloud-ip-floater.svg)
+[![Docker Automated build](https://img.shields.io/docker/cloud/automated/costela/hcloud-ip-floater.svg)](https://hub.docker.com/r/costela/hcloud-ip-floater)
+[![Docker Build Status](https://img.shields.io/docker/cloud/build/costela/hcloud-ip-floater.svg)](https://hub.docker.com/r/costela/hcloud-ip-floater/builds)
+[![Image Info](https://images.microbadger.com/badges/image/costela/hcloud-ip-floater.svg)](https://hub.docker.com/r/costela/hcloud-ip-floater/tags)
 
 
 # Hetzner Cloud™ IP Floater
