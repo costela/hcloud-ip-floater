@@ -291,6 +291,8 @@ func (sc *ServiceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 
 	usableFIPs := make([]*hcloud.FloatingIP, 0)
 
+	// usableFIPs is the intersection of the Service's allocated LB-IPs and the hcloud floating IPs (after accounting
+	// for config.FloatingLabelSelector)
 	for _, ip := range svcIPs {
 		if fip, ok := fipAllocation[ip]; ok {
 			usableFIPs = append(usableFIPs, fip)
@@ -318,7 +320,7 @@ func (sc *ServiceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 	electedNode := nodes[0]
 
 	for _, fip := range usableFIPs {
-		if electedNode == fip.Server.Name {
+		if fip.Server != nil && electedNode == fip.Server.Name {
 			sc.Logger.WithFields(logrus.Fields{
 				"fip":       fip.IP,
 				"namespace": svc.Namespace,
@@ -406,11 +408,15 @@ func (sc *ServiceController) getFIPAllocations() (fipAllocation, error) {
 		ips := make(fipAllocation, len(fips))
 		for _, fip := range fips {
 			// TODO: cache server info
-			srv, _, err := sc.HCloudClient.Server.GetByID(context.Background(), fip.Server.ID)
-			if err != nil {
-				return nil, fmt.Errorf("could not resolve server name for %d: %w", fip.Server.ID, err)
+
+			// resolve Server reference (API returns only empty struct with ID)
+			if fip.Server != nil {
+				srv, _, err := sc.HCloudClient.Server.GetByID(context.Background(), fip.Server.ID)
+				if err != nil {
+					return nil, fmt.Errorf("could not resolve server name for %d: %w", fip.Server.ID, err)
+				}
+				fip.Server = srv
 			}
-			fip.Server = srv
 			ips[fip.IP.String()] = fip
 		}
 
