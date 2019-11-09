@@ -10,6 +10,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/costela/hcloud-ip-floater/internal/config"
+	"github.com/costela/hcloud-ip-floater/internal/controller"
 )
 
 const (
@@ -17,29 +20,18 @@ const (
 	version     = "unreleased"
 )
 
-var config struct {
-	LogLevel              string `id:"log-level" short:"l" desc:"verbosity level for logs" default:"warn"`
-	HCloudToken           string `id:"hcloud-token" desc:"API token for HCloud access"`
-	ServiceLabelSelector  string `id:"service-label-selector" desc:"label selector used to match services" default:"hcloud-ip-floater.cstl.dev/ignore!=true"`
-	FloatingLabelSelector string `id:"floating-label-selector" desc:"label selector used to match floating IPs" default:""`
-
-	// optional MetalLB integration
-	MetalLBNamespace  string `id:"metallb-namespace" desc:"namespace to create MetalLB ConfigMap"`
-	MetalLBConfigName string `id:"metallb-config-name" desc:"name of ConfigMap resource used by MetalLB"`
-}
-
 func main() {
 	logger := logrus.New()
 
-	if err := gonfig.Load(&config, gonfig.Conf{
+	if err := gonfig.Load(&config.Global, gonfig.Conf{
 		EnvPrefix:         "HCLOUD_IP_FLOATER_",
 		FlagIgnoreUnknown: false,
 	}); err != nil {
 		logger.Fatalf("could not parse options: %s", err)
 	}
 
-	if level, err := logrus.ParseLevel(config.LogLevel); err != nil {
-		logger.Fatalf("could not set log level to %s: %s", config.LogLevel, err)
+	if level, err := logrus.ParseLevel(config.Global.LogLevel); err != nil {
+		logger.Fatalf("could not set log level to %s: %s", config.Global.LogLevel, err)
 	} else {
 		logger.SetLevel(level)
 	}
@@ -66,16 +58,16 @@ func main() {
 
 	hcc := hcloud.NewClient(
 		hcloud.WithApplication(serviceName, version),
-		hcloud.WithToken(config.HCloudToken),
+		hcloud.WithToken(config.Global.HCloudToken),
 		hcloud.WithBackoffFunc(hcloud.ExponentialBackoff(2.5, time.Second)), // TODO: this has no upper bound
 		hcloud.WithDebugWriter(logger.WithFields(logrus.Fields{"component": "hcloud"}).WriterLevel(logrus.DebugLevel)),
 	)
 
-	sc := serviceController{
-		logger: logger,
-		k8s:    k8s,
-		hcc:    hcc,
+	sc := controller.ServiceController{
+		Logger:       logger,
+		K8S:          k8s,
+		HCloudClient: hcc,
 	}
 
-	sc.run()
+	sc.Run()
 }
