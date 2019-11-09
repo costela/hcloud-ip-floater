@@ -1,6 +1,6 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/costela/hcloud-ip-floater)](https://goreportcard.com/report/github.com/costela/hcloud-ip-floater)
-![Docker Automated build](https://img.shields.io/docker/automated/costela/hcloud-ip-floater.svg)
-![Docker Build Status](https://img.shields.io/docker/build/costela/hcloud-ip-floater.svg)
+![Docker Automated build](https://img.shields.io/docker/cloud/automated/costela/hcloud-ip-floater.svg)
+![Docker Build Status](https://img.shields.io/docker/cloud/build/costela/hcloud-ip-floater.svg)
 ![Image Info](https://images.microbadger.com/badges/image/costela/hcloud-ip-floater.svg)
 
 
@@ -12,11 +12,11 @@ This small [kubernetes](https://kubernetes.io/) controller manages the attachmen
 It watches for changes to kubernetes `LoadBalancer` services, chooses one of the nodes where its pods are scheduled and
 attaches its assigned floating IP to the selected node.
 
-The service IP assignment is left to a separate controller, like [MetalLB](https://metallb.universe.tf/).
+The service IP assignment is left to a separate component, like [MetalLB](https://metallb.universe.tf/).
 
 ## Installation
 
-The controller can be installed to a cluster using [kustomize](https://kustomize.io/). Simply `kubectl apply -k` the
+The controller can be installed to a cluster using e.g. [kustomize](https://kustomize.io/). Simply `kubectl apply -k` the
 following `kustomization.yaml`:
 
 ```yaml
