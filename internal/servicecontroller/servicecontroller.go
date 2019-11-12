@@ -1,14 +1,11 @@
-package controller
+package servicecontroller
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/singleflight"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -17,6 +14,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/costela/hcloud-ip-floater/internal/config"
+	"github.com/costela/hcloud-ip-floater/internal/fipcontroller"
 )
 
 type podInformerType struct {
@@ -24,19 +22,18 @@ type podInformerType struct {
 	stopper chan struct{}
 }
 
-type ServiceController struct {
-	Logger       logrus.FieldLogger
-	K8S          *kubernetes.Clientset
-	HCloudClient *hcloud.Client
+type Controller struct {
+	Logger logrus.FieldLogger
+	K8S    *kubernetes.Clientset
+	FIPc   *fipcontroller.Controller
 
-	sf             singleflight.Group
-	svcInformer    informers.SharedInformerFactory
-	podInformers   map[string]podInformerType
-	podInformersMu sync.RWMutex
+	svcInformerFactory informers.SharedInformerFactory
+	podInformers       map[string]podInformerType
+	podInformersMu     sync.RWMutex
 }
 
-func (sc *ServiceController) Run() {
-	sc.svcInformer = informers.NewSharedInformerFactoryWithOptions(
+func (sc *Controller) Run() {
+	sc.svcInformerFactory = informers.NewSharedInformerFactoryWithOptions(
 		sc.K8S,
 		5*time.Minute,
 		informers.WithTweakListOptions(func(listOpts *metav1.ListOptions) {
@@ -45,7 +42,7 @@ func (sc *ServiceController) Run() {
 	)
 	sc.podInformers = make(map[string]podInformerType)
 
-	svcInformer := sc.svcInformer.Core().V1().Services().Informer()
+	svcInformer := sc.svcInformerFactory.Core().V1().Services().Informer()
 	stopper := make(chan struct{})
 	defer close(stopper)
 
@@ -99,7 +96,7 @@ func (sc *ServiceController) Run() {
 	svcInformer.Run(stopper)
 }
 
-func (sc *ServiceController) handleServiceAdd(svc *corev1.Service) error {
+func (sc *Controller) handleServiceAdd(svc *corev1.Service) error {
 	sc.Logger.WithFields(logrus.Fields{
 		"namespace": svc.Namespace,
 		"service":   svc.Name,
@@ -109,7 +106,7 @@ func (sc *ServiceController) handleServiceAdd(svc *corev1.Service) error {
 	return sc.addPodInformer(svc)
 }
 
-func (sc *ServiceController) handleServiceUpdate(oldSvc, newSvc *corev1.Service) error {
+func (sc *Controller) handleServiceUpdate(oldSvc, newSvc *corev1.Service) error {
 	sc.Logger.WithFields(logrus.Fields{
 		"namespace": newSvc.Namespace,
 		"service":   newSvc.Name,
@@ -140,7 +137,7 @@ func (sc *ServiceController) handleServiceUpdate(oldSvc, newSvc *corev1.Service)
 	return nil
 }
 
-func (sc *ServiceController) addPodInformer(svc *corev1.Service) error {
+func (sc *Controller) addPodInformer(svc *corev1.Service) error {
 	sc.Logger.WithFields(logrus.Fields{
 		"namespace": svc.Namespace,
 		"service":   svc.Name,
@@ -161,7 +158,18 @@ func (sc *ServiceController) addPodInformer(svc *corev1.Service) error {
 	podInformer := podInformerFactory.Core().V1().Pods().Informer()
 
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		// we ignore Add/Delete because we're only interested in state changes (to and from "ready")
+		// covers newly discovered (but already "ready") pods
+		AddFunc: func(newObj interface{}) {
+			newPod, ok := newObj.(*corev1.Pod)
+			if !ok {
+				sc.Logger.Errorf("received unexpected object type: %T", newObj)
+				return
+			}
+			if err := sc.handleNewPod(svcKey, newPod); err != nil {
+				sc.Logger.WithError(err).Error("could not handle new pod")
+			}
+		},
+		// covers pods becoming ready/not-ready
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			oldPod, ok := oldObj.(*corev1.Pod)
 			if !ok {
@@ -195,7 +203,7 @@ func (sc *ServiceController) addPodInformer(svc *corev1.Service) error {
 	return nil
 }
 
-func (sc *ServiceController) removePodInformer(svc *corev1.Service) error {
+func (sc *Controller) removePodInformer(svc *corev1.Service) error {
 	svcKey, err := cache.MetaNamespaceKeyFunc(svc)
 	if err != nil {
 		return err
@@ -220,7 +228,7 @@ func (sc *ServiceController) removePodInformer(svc *corev1.Service) error {
 	return nil
 }
 
-func (sc *ServiceController) replacePodInformer(oldSvc, newSvc *corev1.Service) error {
+func (sc *Controller) replacePodInformer(oldSvc, newSvc *corev1.Service) error {
 	// TODO: too simple: we might miss events between remove/add; should fetch old/replace/close
 	if err := sc.removePodInformer(oldSvc); err != nil {
 		return err
@@ -233,44 +241,68 @@ func (sc *ServiceController) replacePodInformer(oldSvc, newSvc *corev1.Service) 
 	return nil
 }
 
-func (sc *ServiceController) handlePodUpdate(svcKey string, oldPod, newPod *corev1.Pod) error {
-	obj, _, err := sc.svcInformer.Core().V1().Services().Informer().GetIndexer().GetByKey(svcKey)
+func (sc *Controller) handleNewPod(svcKey string, newPod *corev1.Pod) error {
+	svc, err := sc.getServiceFromKey(svcKey)
 	if err != nil {
 		return err
 	}
 
-	svc, ok := obj.(*corev1.Service)
-	if !ok {
-		return fmt.Errorf("got unexpected obj type %T", obj)
+	funcLogger := sc.Logger.WithFields(logrus.Fields{
+		"namespace": svc.Namespace,
+		"service":   svc.Name,
+		"pod":       newPod.Name,
+	})
+
+	if !podIsReady(newPod) {
+		funcLogger.Debug("ignoring non-ready pod")
+		return nil
 	}
 
+	ips := getLoadbalancerIPs(svc)
+	return sc.handleServiceIPs(svc, ips)
+}
+
+func (sc *Controller) handlePodUpdate(svcKey string, oldPod, newPod *corev1.Pod) error {
+	svc, err := sc.getServiceFromKey(svcKey)
+	if err != nil {
+		return err
+	}
+
+	funcLogger := sc.Logger.WithFields(logrus.Fields{
+		"namespace": svc.Namespace,
+		"service":   svc.Name,
+		"pod":       newPod.Name,
+	})
+
 	if podIsReady(oldPod) == podIsReady(newPod) {
-		sc.Logger.WithFields(logrus.Fields{
-			"namespace": svc.Namespace,
-			"service":   svc.Name,
-			"pod":       newPod.Name,
-		}).Debug("pod readiness unchanged")
+		funcLogger.Debug("pod readiness unchanged")
 		return nil
 	}
 
 	if podIsReady(oldPod) {
-		sc.Logger.WithFields(logrus.Fields{
-			"namespace": svc.Namespace,
-			"service":   svc.Name,
-			"pod":       oldPod.Name,
-		}).Info("pod became not-ready")
+		funcLogger.Info("pod became not-ready")
 	} else if podIsReady(newPod) {
-		sc.Logger.WithFields(logrus.Fields{
-			"namespace": svc.Namespace,
-			"service":   svc.Name,
-			"pod":       newPod.Name,
-		}).Info("pod became ready")
+		funcLogger.Info("pod became ready")
 	} else {
 		return nil // some other uninteresting state transition
 	}
 
 	ips := getLoadbalancerIPs(svc)
 	return sc.handleServiceIPs(svc, ips)
+}
+
+func (sc *Controller) getServiceFromKey(svcKey string) (*corev1.Service, error) {
+	obj, _, err := sc.svcInformerFactory.Core().V1().Services().Informer().GetIndexer().GetByKey(svcKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not find service %s: %w", svcKey, err)
+	}
+
+	svc, ok := obj.(*corev1.Service)
+	if !ok {
+		return nil, fmt.Errorf("got unexpected obj type %T", obj)
+	}
+
+	return svc, nil
 }
 
 func podIsReady(pod *corev1.Pod) bool {
@@ -282,26 +314,8 @@ func podIsReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func (sc *ServiceController) handleServiceIPs(svc *corev1.Service, svcIPs []string) error {
+func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs []string) error {
 	// TODO: use util/workqueue to avoid blocking informer if hcloud API is slow
-	fipAllocation, err := sc.getFIPAllocations()
-	if err != nil {
-		return err
-	}
-
-	usableFIPs := make([]*hcloud.FloatingIP, 0)
-
-	// usableFIPs is the intersection of the Service's allocated LB-IPs and the hcloud floating IPs (after accounting
-	// for config.FloatingLabelSelector)
-	for _, ip := range svcIPs {
-		if fip, ok := fipAllocation[ip]; ok {
-			usableFIPs = append(usableFIPs, fip)
-		}
-	}
-
-	if len(usableFIPs) == 0 {
-		return fmt.Errorf("service IPs %s not found in floating IP list", svcIPs)
-	}
 
 	nodes, err := sc.getServiceReadyNodes(svc)
 	if err != nil {
@@ -319,39 +333,12 @@ func (sc *ServiceController) handleServiceIPs(svc *corev1.Service, svcIPs []stri
 	// TODO: this is probably too simple, but should at least be deterministic
 	electedNode := nodes[0]
 
-	for _, fip := range usableFIPs {
-		if fip.Server != nil && electedNode == fip.Server.Name {
-			sc.Logger.WithFields(logrus.Fields{
-				"fip":       fip.IP,
-				"namespace": svc.Namespace,
-				"service":   svc.Name,
-				"node":      electedNode,
-			}).Info("floating IP already attached")
-			continue
-		}
-
-		// TODO: use multierr?
-		if err := sc.attachFIPToNode(fip, electedNode); err != nil {
-			sc.Logger.WithError(err).WithFields(logrus.Fields{
-				"fip":       fip.IP,
-				"namespace": svc.Namespace,
-				"service":   svc.Name,
-				"node":      electedNode,
-			}).Errorf("could not attach floating IP")
-		}
-		sc.Logger.WithFields(logrus.Fields{
-			"fip":       fip.IP,
-			"namespace": svc.Namespace,
-			"service":   svc.Name,
-			"node":      electedNode,
-		}).Info("floating IP attached")
-	}
-
+	sc.FIPc.AttachToNode(svcIPs, electedNode)
 	return nil
 }
 
 // getServiceReadyNodes gets all nodes where ready pods are scheduled
-func (sc *ServiceController) getServiceReadyNodes(svc *corev1.Service) ([]string, error) {
+func (sc *Controller) getServiceReadyNodes(svc *corev1.Service) ([]string, error) {
 	svcKey, err := cache.MetaNamespaceKeyFunc(svc)
 	if err != nil {
 		return nil, err
@@ -365,6 +352,7 @@ func (sc *ServiceController) getServiceReadyNodes(svc *corev1.Service) ([]string
 		return nil, fmt.Errorf("could not find informer factory for svc %s", svcKey)
 	}
 
+	// LabelSelector comes from the podInformerFactory
 	pods, err := podInformerFactory.factory.Core().V1().Pods().Lister().List(labels.NewSelector())
 	if err != nil {
 		return nil, err
@@ -380,52 +368,7 @@ func (sc *ServiceController) getServiceReadyNodes(svc *corev1.Service) ([]string
 	return nodes, nil
 }
 
-func (sc *ServiceController) attachFIPToNode(fip *hcloud.FloatingIP, node string) error {
-	server, _, err := sc.HCloudClient.Server.GetByName(context.Background(), node)
-	if err != nil {
-		return err
-	}
-	act, _, err := sc.HCloudClient.FloatingIP.Assign(context.Background(), fip, server)
-	if err != nil {
-		return err
-	}
-	_, errc := sc.HCloudClient.Action.WatchProgress(context.Background(), act)
-	return <-errc
-}
-
-type fipAllocation map[string]*hcloud.FloatingIP
-
-func (sc *ServiceController) getFIPAllocations() (fipAllocation, error) {
-	res, err, _ := sc.sf.Do("", func() (interface{}, error) {
-		fips, err := sc.HCloudClient.FloatingIP.AllWithOpts(context.Background(), hcloud.FloatingIPListOpts{
-			ListOpts: hcloud.ListOpts{
-				LabelSelector: config.Global.FloatingLabelSelector,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("could not fetch floating IPs: %w", err)
-		}
-		ips := make(fipAllocation, len(fips))
-		for _, fip := range fips {
-			// TODO: cache server info
-
-			// resolve Server reference (API returns only empty struct with ID)
-			if fip.Server != nil {
-				srv, _, err := sc.HCloudClient.Server.GetByID(context.Background(), fip.Server.ID)
-				if err != nil {
-					return nil, fmt.Errorf("could not resolve server name for %d: %w", fip.Server.ID, err)
-				}
-				fip.Server = srv
-			}
-			ips[fip.IP.String()] = fip
-		}
-
-		return ips, nil
-	})
-	return res.(fipAllocation), err
-}
-
-func (sc *ServiceController) unsupportedServiceType(svc *corev1.Service) bool {
+func (sc *Controller) unsupportedServiceType(svc *corev1.Service) bool {
 	if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 		sc.Logger.WithFields(logrus.Fields{
 			"namespace": svc.Namespace,

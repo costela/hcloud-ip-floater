@@ -12,7 +12,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/costela/hcloud-ip-floater/internal/config"
-	"github.com/costela/hcloud-ip-floater/internal/controller"
+	"github.com/costela/hcloud-ip-floater/internal/fipcontroller"
+	"github.com/costela/hcloud-ip-floater/internal/servicecontroller"
 )
 
 const (
@@ -63,10 +64,10 @@ func main() {
 		hcloud.WithDebugWriter(logger.WithFields(logrus.Fields{"component": "hcloud"}).WriterLevel(logrus.DebugLevel)),
 	)
 
-	sc := controller.ServiceController{
-		Logger:       logger,
-		K8S:          k8s,
-		HCloudClient: hcc,
+	sc := servicecontroller.Controller{
+		Logger: logger,
+		K8S:    k8s,
+		FIPc:   fipcontroller.New(logger, hcc),
 	}
 
 	sc.Run()
