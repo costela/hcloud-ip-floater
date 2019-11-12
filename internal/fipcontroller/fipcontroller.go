@@ -12,7 +12,7 @@ import (
 
 type Controller struct {
 	logger       logrus.FieldLogger
-	hcloudClient *hcloud.Client
+	hcloudClient hcloudClienter
 	attachments  map[string]string
 	mu           sync.RWMutex
 }
@@ -20,7 +20,7 @@ type Controller struct {
 func New(logger logrus.FieldLogger, hcc *hcloud.Client) *Controller {
 	fc := &Controller{
 		logger:       logger.WithField("component", "fipcontroller"),
-		hcloudClient: hcc,
+		hcloudClient: hcloudClient{hcc}, // wrap in mock-helper
 		attachments:  make(map[string]string),
 	}
 
@@ -39,7 +39,7 @@ func (fc *Controller) AttachToNode(svcIPs []string, node string) {
 }
 
 func (fc *Controller) Converge() {
-	fips, err := fc.hcloudClient.FloatingIP.AllWithOpts(context.Background(), hcloud.FloatingIPListOpts{
+	fips, err := fc.hcloudClient.FloatingIP().AllWithOpts(context.Background(), hcloud.FloatingIPListOpts{
 		ListOpts: hcloud.ListOpts{
 			LabelSelector: config.Global.FloatingLabelSelector,
 		},
@@ -66,7 +66,7 @@ func (fc *Controller) Converge() {
 		// resolve Server reference (API returns only empty struct with ID)
 		// TODO: can we safely cache server info? Can we even support name changes?
 		if fip.Server != nil {
-			srv, _, err := fc.hcloudClient.Server.GetByID(context.Background(), fip.Server.ID)
+			srv, _, err := fc.hcloudClient.Server().GetByID(context.Background(), fip.Server.ID)
 			if err != nil {
 				fc.logger.WithError(err).WithFields(logrus.Fields{
 					"server_id": fip.Server.ID,
@@ -112,16 +112,16 @@ func (fc *Controller) getIPs() map[string]struct{} {
 }
 
 func (fc *Controller) attachFIPToNode(fip *hcloud.FloatingIP, node string) error {
-	server, _, err := fc.hcloudClient.Server.GetByName(context.Background(), node)
+	server, _, err := fc.hcloudClient.Server().GetByName(context.Background(), node)
 	if err != nil {
 		return err
 	}
 
-	act, _, err := fc.hcloudClient.FloatingIP.Assign(context.Background(), fip, server)
+	act, _, err := fc.hcloudClient.FloatingIP().Assign(context.Background(), fip, server)
 	if err != nil {
 		return err
 	}
 
-	_, errc := fc.hcloudClient.Action.WatchProgress(context.Background(), act)
+	_, errc := fc.hcloudClient.Action().WatchProgress(context.Background(), act)
 	return <-errc
 }
