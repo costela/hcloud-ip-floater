@@ -35,7 +35,7 @@ type Controller struct {
 func (sc *Controller) Run() {
 	sc.svcInformerFactory = informers.NewSharedInformerFactoryWithOptions(
 		sc.K8S,
-		5*time.Minute,
+		time.Duration(config.Global.SyncSeconds)*time.Second,
 		informers.WithTweakListOptions(func(listOpts *metav1.ListOptions) {
 			listOpts.LabelSelector = config.Global.ServiceLabelSelector
 		}),
@@ -150,7 +150,7 @@ func (sc *Controller) addPodInformer(svc *corev1.Service) error {
 
 	podInformerFactory := informers.NewSharedInformerFactoryWithOptions(
 		sc.K8S,
-		5*time.Minute,
+		time.Duration(config.Global.SyncSeconds)*time.Second,
 		informers.WithTweakListOptions(func(listOpts *metav1.ListOptions) {
 			listOpts.LabelSelector = labels.Set(svc.Spec.Selector).String()
 		}),

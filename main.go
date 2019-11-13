@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"time"
 
 	"github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/sirupsen/logrus"
@@ -60,7 +59,6 @@ func main() {
 	hcc := hcloud.NewClient(
 		hcloud.WithApplication(serviceName, version),
 		hcloud.WithToken(config.Global.HCloudToken),
-		hcloud.WithBackoffFunc(hcloud.ExponentialBackoff(2.5, time.Second)), // TODO: this has no upper bound
 		hcloud.WithDebugWriter(logger.WithFields(logrus.Fields{"component": "hcloud"}).WriterLevel(logrus.DebugLevel)),
 	)
 

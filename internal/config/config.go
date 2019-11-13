@@ -9,4 +9,6 @@ var Global struct {
 	// optional MetalLB integration
 	MetalLBNamespace  string `id:"metallb-namespace" desc:"namespace to create MetalLB ConfigMap"`
 	MetalLBConfigName string `id:"metallb-config-name" desc:"name of ConfigMap resource used by MetalLB"`
+
+	SyncSeconds int `id:"sync-interval" desc:"interval to sync with k8s and poll from hcloud" default:"300" opts:"hidden"`
 }
