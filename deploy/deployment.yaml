@@ -26,3 +26,4 @@ spec:
                 name: hcloud-ip-floater-secret-env
             - configMapRef:
                 name: hcloud-ip-floater-config-env
+                optional: true
