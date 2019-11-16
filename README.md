@@ -37,9 +37,26 @@ listed in the [configuration options](#configuration-options) section below.
 
 ## Configuration options
 
-| Option | Env | Description | Default |
-|---|---|---|---|
-| `--hcloud-token` | HCLOUD_IP_FLOATER_HCLOUD_TOKEN | API token for hetzner cloud access | |
-| `--service-label-selector` | HCLOUD_IP_FLOATER_SERVICE_LABEL_SELECTOR | service label selector to use when watching for kubernetes services | `hcloud-ip-floater.cstl.dev/ignore!=true` |
-| `--floating-label-selector` | HCLOUD_IP_FLOATER_FLOATING_LABEL_SELECTOR | label selector for hcloud floating IPs; only matching IPs will be available to the controller | `hcloud-ip-floater.cstl.dev/ignore!=true` |
-| `--log-level` | HCLOUD_IP_FLOATER_LOG_LEVEL | Log output verbosity (debug/info/warn/error) | `warn` |
+Either as command line arguments or environment variables.
+
+### `--hcloud-token` or `HCLOUD_IP_FLOATER_HCLOUD_TOKEN` **(required)**
+
+API token for hetzner cloud access.
+
+### `--service-label-selector` or `HCLOUD_IP_FLOATER_SERVICE_LABEL_SELECTOR` 
+
+Service label selector to use when watching for kubernetes services. Any services that do not match this selector will be ignored by the controller.
+
+**Default**: `hcloud-ip-floater.cstl.dev/ignore!=true`
+
+### `--floating-label-selector` or `HCLOUD_IP_FLOATER_FLOATING_LABEL_SELECTOR`
+
+Label selector for hcloud floating IPs. Floating IPs that do not match this selector will be ignored by the controller. 
+
+**Default**: `hcloud-ip-floater.cstl.dev/ignore!=true`
+
+### `--log-level` or `HCLOUD_IP_FLOATER_LOG_LEVEL`
+
+Log output verbosity (debug/info/warn/error)
+
+**Default**: `warn`
