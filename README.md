@@ -22,7 +22,7 @@ following `kustomization.yaml`:
 ```yaml
 namespace: hcloud-ip-floater
 bases:
-  - github.com/costela/hcloud-ip-floater/deploy?ref=v0.1.3
+  - github.com/costela/hcloud-ip-floater/deploy?ref=v0.1.4
 secretGenerator:
   - name: hcloud-ip-floater-secret-env
     literals:

@@ -2,7 +2,7 @@
 namespace: hcloud-ip-floater
 images:
   - name: costela/hcloud-ip-floater
-    newTag: v0.1.3
+    newTag: v0.1.4
 # secretGenerator:
 #   - name: hcloud-ip-floater-secret-env
 #     env: env.txt
