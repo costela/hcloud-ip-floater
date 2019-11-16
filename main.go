@@ -62,11 +62,16 @@ func main() {
 		hcloud.WithDebugWriter(logger.WithFields(logrus.Fields{"component": "hcloud"}).WriterLevel(logrus.DebugLevel)),
 	)
 
+	fipc := fipcontroller.New(logger, hcc)
+
 	sc := servicecontroller.Controller{
 		Logger: logger,
 		K8S:    k8s,
-		FIPc:   fipcontroller.New(logger, hcc),
+		FIPc:   fipc,
 	}
 
-	sc.Run()
+	go fipc.Run()
+	go sc.Run()
+
+	select {}
 }

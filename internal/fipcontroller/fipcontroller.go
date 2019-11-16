@@ -33,20 +33,21 @@ func New(logger logrus.FieldLogger, hcc *hcloud.Client) *Controller {
 		fips:         make(map[string]*hcloud.FloatingIP),
 	}
 
-	go func() {
-		for {
-			<-time.NewTicker(time.Duration(config.Global.SyncSeconds) * time.Second).C
-
-			if changed, err := fc.syncFloatingIPs(); err != nil {
-				fc.logger.WithError(err).Error("could not sync floating IPs")
-			} else if changed {
-				fc.logger.Info("floating IPs changed")
-				fc.Reconcile()
-			}
-		}
-	}()
-
 	return fc
+}
+
+func (fc *Controller) Run() {
+	for {
+		<-time.NewTicker(time.Duration(config.Global.SyncSeconds) * time.Second).C
+
+		if changed, err := fc.syncFloatingIPs(); err != nil {
+			fc.logger.WithError(err).Error("could not sync floating IPs")
+		} else if changed {
+			fc.logger.Info("floating IPs changed")
+			fc.Reconcile()
+		}
+	}
+
 }
 
 // AttachToNode adds a FIP-to-node attachment to our worldview and immediately attempts to reconcile it with hcloud's
@@ -125,6 +126,8 @@ func (fc *Controller) syncFloatingIPs() (bool, error) {
 	return changedFIPs, nil
 }
 
+// Reconcile starts an asynchronous attempt to make the managed floating IPs match the controller's worldview about
+// which attachments should be current.
 func (fc *Controller) Reconcile() {
 	_ = fc.sf.DoChan("reconciliation", func() (interface{}, error) {
 		fc.logger.Info("starting reconciliation")
