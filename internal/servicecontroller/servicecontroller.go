@@ -317,6 +317,14 @@ func podIsReady(pod *corev1.Pod) bool {
 func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs []string) error {
 	// TODO: use util/workqueue to avoid blocking informer if hcloud API is slow
 
+	if len(svcIPs) == 0 {
+		sc.Logger.WithFields(logrus.Fields{
+			"namespace": svc.Namespace,
+			"service":   svc.Name,
+		}).Info("ignoring service with no IPs")
+		return nil
+	}
+
 	nodes, err := sc.getServiceReadyNodes(svc)
 	if err != nil {
 		return err
