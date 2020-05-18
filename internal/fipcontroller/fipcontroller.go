@@ -200,6 +200,11 @@ func (fc *Controller) attachFIPToNode(fip *hcloud.FloatingIP, node string) error
 		return err
 	}
 
+	// extra safety for https://github.com/costela/hcloud-ip-floater/issues/8
+	if server == nil {
+		return fmt.Errorf("could not find node %s", node)
+	}
+
 	act, _, err := fc.hcloudClient.FloatingIP().Assign(context.Background(), fip, server)
 	if err != nil {
 		return err
