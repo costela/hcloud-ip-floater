@@ -274,14 +274,15 @@ func (sc *Controller) handlePodUpdate(svcKey string, oldPod, newPod *corev1.Pod)
 		"pod":       newPod.Name,
 	})
 
-	if podIsReady(oldPod) == podIsReady(newPod) {
+	oldReady := podIsReady(oldPod)
+	newReady := podIsReady(newPod)
+
+	if oldReady == newReady {
 		funcLogger.Debug("pod readiness unchanged")
 		return nil
-	}
-
-	if podIsReady(oldPod) {
+	} else if oldReady {
 		funcLogger.Info("pod became not-ready")
-	} else if podIsReady(newPod) {
+	} else if newReady {
 		funcLogger.Info("pod became ready")
 	} else {
 		return nil // some other uninteresting state transition
