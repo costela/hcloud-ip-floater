@@ -28,6 +28,9 @@ type Controller struct {
 	K8S    *kubernetes.Clientset
 	FIPc   *fipcontroller.Controller
 
+	svcIPs   map[string]stringset.StringSet
+	svcIPsMu sync.RWMutex
+
 	svcInformerFactory informers.SharedInformerFactory
 	podInformers       map[string]podInformerType
 	podInformersMu     sync.RWMutex
@@ -41,6 +44,7 @@ func (sc *Controller) Run() {
 			listOpts.LabelSelector = config.Global.ServiceLabelSelector
 		}),
 	)
+	sc.svcIPs = make(map[string]stringset.StringSet)
 	sc.podInformers = make(map[string]podInformerType)
 
 	svcInformer := sc.svcInformerFactory.Core().V1().Services().Informer()
@@ -88,6 +92,7 @@ func (sc *Controller) Run() {
 			if sc.unsupportedServiceType(oldSvc) {
 				return
 			}
+			sc.forgetServiceIPs(oldSvc.Name)
 			if err := sc.removePodInformer(oldSvc); err != nil {
 				sc.Logger.WithError(err).Error("error removing pod informer")
 			}
@@ -319,11 +324,13 @@ func podIsReady(pod *corev1.Pod) bool {
 func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.StringSet) error {
 	// TODO: use util/workqueue to avoid blocking informer if hcloud API is slow
 
+	sc.updateServiceIPs(svc.Name, svcIPs)
+
 	if len(svcIPs) == 0 {
 		sc.Logger.WithFields(logrus.Fields{
 			"namespace": svc.Namespace,
 			"service":   svc.Name,
-		}).Info("ignoring service with no IPs")
+		}).Info("service has no IPs")
 		return nil
 	}
 
@@ -336,7 +343,7 @@ func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.Str
 		sc.Logger.WithFields(logrus.Fields{
 			"namespace": svc.Namespace,
 			"service":   svc.Name,
-		}).Info("ignoring service with no ready pods")
+		}).Info("service has no ready pods")
 		return nil
 	}
 
@@ -390,6 +397,22 @@ func (sc *Controller) unsupportedServiceType(svc *corev1.Service) bool {
 	return false
 }
 
+func (sc *Controller) updateServiceIPs(svcName string, svcIPs stringset.StringSet) {
+	sc.svcIPsMu.Lock()
+	defer sc.svcIPsMu.Unlock()
+
+	oldIPs := sc.svcIPs[svcName]
+	sc.FIPc.ForgetAttachments(oldIPs.Diff(svcIPs))
+}
+
+func (sc *Controller) forgetServiceIPs(svcName string) {
+	sc.svcIPsMu.Lock()
+	defer sc.svcIPsMu.Unlock()
+
+	sc.FIPc.ForgetAttachments(sc.svcIPs[svcName])
+
+	delete(sc.svcIPs, svcName)
+}
 
 func getLoadbalancerIPs(svc *corev1.Service) stringset.StringSet {
 	ips := make(stringset.StringSet, len(svc.Status.LoadBalancer.Ingress))

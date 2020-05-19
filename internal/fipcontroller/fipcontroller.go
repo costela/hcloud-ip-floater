@@ -75,6 +75,18 @@ func (fc *Controller) AttachToNode(svcIPs stringset.StringSet, node string) {
 	}
 }
 
+// ForgetAttachments remove the desired attachment from our worldview. This avoids "stealing" stale attachments from
+// FIPs that might be known to us, but not currently in use by us.
+// This does not trigger actual FIP dettachment.
+func (fc *Controller) ForgetAttachments(svcIPs stringset.StringSet) {
+	fc.attMu.Lock()
+	defer fc.attMu.Unlock()
+
+	for ip := range svcIPs {
+		delete(fc.attachments, ip)
+	}
+}
+
 func (fc *Controller) syncFloatingIPs() (bool, error) {
 	fips, err := fc.hcloudClient.FloatingIP().AllWithOpts(context.Background(), hcloud.FloatingIPListOpts{
 		ListOpts: hcloud.ListOpts{
