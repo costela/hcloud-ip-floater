@@ -36,6 +36,8 @@ func main() {
 		logger.SetLevel(level)
 	}
 
+	logger.WithFields(logrus.Fields{"version": version}).Info("starting hcloud IP floater")
+
 	var k8sCfg *rest.Config
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
 		cfg, err := rest.InClusterConfig()
