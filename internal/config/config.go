@@ -10,5 +10,6 @@ var Global struct {
 	MetalLBNamespace  string `id:"metallb-namespace" desc:"namespace to create MetalLB ConfigMap"`
 	MetalLBConfigName string `id:"metallb-config-name" desc:"name of ConfigMap resource used by MetalLB"`
 
-	SyncSeconds int `id:"sync-interval" desc:"interval to sync with k8s and poll from hcloud" default:"300" opts:"hidden"`
+	SyncSeconds int  `id:"sync-interval" desc:"interval to sync with k8s and poll from hcloud" default:"300" opts:"hidden"`
+	Version     bool `id:"version" desc:"show version and quit" opts:"hidden"`
 }

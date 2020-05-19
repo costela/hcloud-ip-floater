@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/hetznercloud/hcloud-go/hcloud"
@@ -17,8 +18,9 @@ import (
 
 const (
 	serviceName = "hcloud-ip-floater"
-	version     = "unreleased"
 )
+
+var version = "unreleased"
 
 func main() {
 	logger := logrus.New()
@@ -28,6 +30,11 @@ func main() {
 		FlagIgnoreUnknown: false,
 	}); err != nil {
 		logger.Fatalf("could not parse options: %s", err)
+	}
+
+	if config.Global.Version {
+		fmt.Println(version)
+		os.Exit(0)
 	}
 
 	if level, err := logrus.ParseLevel(config.Global.LogLevel); err != nil {
