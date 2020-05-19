@@ -15,6 +15,7 @@ import (
 
 	"github.com/costela/hcloud-ip-floater/internal/config"
 	"github.com/costela/hcloud-ip-floater/internal/fipcontroller"
+	"github.com/costela/hcloud-ip-floater/internal/stringset"
 )
 
 type podInformerType struct {
@@ -120,7 +121,7 @@ func (sc *Controller) handleServiceUpdate(oldSvc, newSvc *corev1.Service) error 
 	}
 
 	for i := range oldIPs {
-		if oldIPs[i] != newIPs[i] {
+		if !newIPs.Has(i) {
 			return sc.handleServiceIPs(newSvc, newIPs)
 		}
 	}
@@ -315,7 +316,7 @@ func podIsReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs []string) error {
+func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.StringSet) error {
 	// TODO: use util/workqueue to avoid blocking informer if hcloud API is slow
 
 	if len(svcIPs) == 0 {
@@ -389,14 +390,15 @@ func (sc *Controller) unsupportedServiceType(svc *corev1.Service) bool {
 	return false
 }
 
-func getLoadbalancerIPs(svc *corev1.Service) []string {
-	ips := make([]string, 0, len(svc.Status.LoadBalancer.Ingress))
+
+func getLoadbalancerIPs(svc *corev1.Service) stringset.StringSet {
+	ips := make(stringset.StringSet, len(svc.Status.LoadBalancer.Ingress))
 
 	// ignore svc.Spec.LoadBalancerIP; it's provided as a request and may be ignored by k8s
 
-	for _, ip := range svc.Status.LoadBalancer.Ingress {
-		if ip.IP != "" {
-			ips = append(ips, ip.IP)
+	for _, ingress := range svc.Status.LoadBalancer.Ingress {
+		if ingress.IP != "" {
+			ips.Add(ingress.IP)
 		}
 	}
 	return ips

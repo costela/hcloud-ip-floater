@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/costela/hcloud-ip-floater/internal/config"
+	"github.com/costela/hcloud-ip-floater/internal/stringset"
 )
 
 type Controller struct {
@@ -52,12 +53,12 @@ func (fc *Controller) Run() {
 }
 
 // AttachToNode adds a FIP-to-node attachment to our worldview and immediately attempts to reconcile it with hcloud's
-func (fc *Controller) AttachToNode(svcIPs []string, node string) {
+func (fc *Controller) AttachToNode(svcIPs stringset.StringSet, node string) {
 	fc.attMu.Lock()
 	defer fc.attMu.Unlock()
 
 	var changedAttachment bool
-	for _, ip := range svcIPs {
+	for ip := range svcIPs {
 		if oldNode, found := fc.attachments[ip]; !found || node != oldNode {
 			fc.attachments[ip] = node
 			changedAttachment = true
@@ -89,10 +90,10 @@ func (fc *Controller) syncFloatingIPs() (bool, error) {
 
 	var changedFIPs bool
 
-	seenFIPs := make(map[string]struct{})
+	seenFIPs := make(stringset.StringSet)
 
 	for _, fip := range fips {
-		seenFIPs[fip.IP.String()] = struct{}{}
+		seenFIPs.Add(fip.IP.String())
 
 		if oldFIP, found := fc.fips[fip.IP.String()]; !found || fip.ID != oldFIP.ID {
 			// resolve Server reference (API returns only empty struct with ID)
@@ -118,7 +119,7 @@ func (fc *Controller) syncFloatingIPs() (bool, error) {
 	}
 
 	for fip := range fc.fips {
-		if _, found := seenFIPs[fip]; !found {
+		if !seenFIPs.Has(fip) {
 			delete(fc.fips, fip)
 			changedFIPs = true
 		}
@@ -183,13 +184,13 @@ func (fc *Controller) Reconcile() {
 	})
 }
 
-func (fc *Controller) getServiceIPs() map[string]struct{} {
+func (fc *Controller) getServiceIPs() stringset.StringSet {
 	fc.attMu.RLock()
 	defer fc.attMu.RUnlock()
 
-	ips := make(map[string]struct{})
+	ips := make(stringset.StringSet)
 	for ip := range fc.attachments {
-		ips[ip] = struct{}{}
+		ips.Add(ip)
 	}
 
 	return ips
