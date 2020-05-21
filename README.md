@@ -35,6 +35,9 @@ recommended location for storing the hcloud API token.
 It's also possible to provide a `configMapGenerator` called `hcloud-ip-floater-config-env` with the non-secret options
 listed in the [configuration options](#configuration-options) section below.
 
+⚠ in order for the controller to attach IPs to the hcloud nodes, the k8s nodes **must** use the same names as in
+hcloud.
+
 ## Configuration options
 
 Either as command line arguments or environment variables.
