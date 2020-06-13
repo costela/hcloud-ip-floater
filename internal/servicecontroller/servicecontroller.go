@@ -347,7 +347,19 @@ func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.Str
 		return nil
 	}
 
-	// TODO: this is probably too simple, but should at least be deterministic
+	name, err := cache.MetaNamespaceKeyFunc(svc)
+	if err != nil {
+		return err
+	}
+
+	// Use MetalLB's ready nodes ordering method
+	sort.Slice(nodes, func(i, j int) bool {
+		hi := sha256.Sum256([]byte(nodes[i] + "#" + name))
+		hj := sha256.Sum256([]byte(nodes[j] + "#" + name))
+
+		return bytes.Compare(hi[:], hj[:]) < 0
+	})
+
 	electedNode := nodes[0]
 
 	sc.FIPc.AttachToNode(svcIPs, electedNode)
