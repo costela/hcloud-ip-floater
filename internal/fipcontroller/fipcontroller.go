@@ -126,7 +126,8 @@ func (fc *Controller) syncFloatingIPs() (bool, error) {
 
 			fc.fips[ip] = fip
 			changedFIPs = true
-		} else if oldFIP.Server.Name != fc.attachments[ip] {
+		} else if (oldFIP.Server != nil && oldFIP.Server.Name != fc.attachments[ip]) || (oldFIP.Server == nil && fc.attachments[ip] != "") {
+			// FIP hasn't changed but attachment doesn't match so let's reconcile
 			changedFIPs = true
 		}
 	}
