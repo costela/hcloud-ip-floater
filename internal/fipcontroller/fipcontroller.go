@@ -105,9 +105,12 @@ func (fc *Controller) syncFloatingIPs() (bool, error) {
 	seenFIPs := make(stringset.StringSet)
 
 	for _, fip := range fips {
-		seenFIPs.Add(fip.IP.String())
+		ip := fip.IP.String()
 
-		if oldFIP, found := fc.fips[fip.IP.String()]; !found || fc.fipChanged(oldFIP, fip) {
+		seenFIPs.Add(ip)
+		oldFIP := fc.fips[ip]
+
+		if fc.fipChanged(oldFIP, fip) {
 			// resolve Server reference (API returns only empty struct with ID)
 			// TODO: can we safely cache server info? Can we even support name changes?
 			if fip.Server != nil {
@@ -121,11 +124,9 @@ func (fc *Controller) syncFloatingIPs() (bool, error) {
 				fip.Server = srv
 			}
 
-			fc.fips[fip.IP.String()] = fip
+			fc.fips[ip] = fip
 			changedFIPs = true
-		}
-
-		if fip.Server != nil && fip.Server.Name != fc.attachments[fip.IP.String()] {
+		} else if oldFIP != nil && oldFIP.Server.Name != fc.attachments[ip] {
 			changedFIPs = true
 		}
 	}
@@ -197,7 +198,7 @@ func (fc *Controller) Reconcile() {
 }
 
 func (fc *Controller) fipChanged(oldFIP *hcloud.FloatingIP, newFIP *hcloud.FloatingIP) bool {
-	if oldFIP.ID != newFIP.ID {
+	if oldFIP != newFIP || oldFIP.ID != newFIP.ID {
 		return true
 	}
 
