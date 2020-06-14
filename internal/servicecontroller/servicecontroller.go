@@ -95,7 +95,11 @@ func (sc *Controller) Run() {
 			if sc.unsupportedServiceType(oldSvc) {
 				return
 			}
-			sc.forgetServiceIPs(oldSvc.Name)
+			svcKey, err := cache.MetaNamespaceKeyFunc(oldSvc)
+			if err != nil {
+				return
+			}
+			sc.forgetServiceIPs(svcKey)
 			if err := sc.removePodInformer(oldSvc); err != nil {
 				sc.Logger.WithError(err).Error("error removing pod informer")
 			}
@@ -327,7 +331,12 @@ func podIsReady(pod *corev1.Pod) bool {
 func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.StringSet) error {
 	// TODO: use util/workqueue to avoid blocking informer if hcloud API is slow
 
-	sc.updateServiceIPs(svc.Name, svcIPs)
+	svcKey, err := cache.MetaNamespaceKeyFunc(svc)
+	if err != nil {
+		return err
+	}
+
+	sc.updateServiceIPs(svcKey, svcIPs)
 
 	if len(svcIPs) == 0 {
 		sc.Logger.WithFields(logrus.Fields{
@@ -337,7 +346,7 @@ func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.Str
 		return nil
 	}
 
-	nodes, err := sc.getServiceReadyNodes(svc)
+	nodes, err := sc.getServiceReadyNodes(svcKey)
 	if err != nil {
 		return err
 	}
@@ -350,15 +359,11 @@ func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.Str
 		return nil
 	}
 
-	name, err := cache.MetaNamespaceKeyFunc(svc)
-	if err != nil {
-		return err
-	}
-
-	// Use MetalLB's ready nodes ordering method
+	// Order ready nodes by hash of node#service, the same way MetalLB does
+	// This means we will pick the same node MetalLB does so services with externalTrafficPolicy=Local work correctly
 	sort.Slice(nodes, func(i, j int) bool {
-		hi := sha256.Sum256([]byte(nodes[i] + "#" + name))
-		hj := sha256.Sum256([]byte(nodes[j] + "#" + name))
+		hi := sha256.Sum256([]byte(nodes[i] + "#" + svcKey))
+		hj := sha256.Sum256([]byte(nodes[j] + "#" + svcKey))
 
 		return bytes.Compare(hi[:], hj[:]) < 0
 	})
@@ -370,12 +375,7 @@ func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.Str
 }
 
 // getServiceReadyNodes gets all nodes where ready pods are scheduled
-func (sc *Controller) getServiceReadyNodes(svc *corev1.Service) ([]string, error) {
-	svcKey, err := cache.MetaNamespaceKeyFunc(svc)
-	if err != nil {
-		return nil, err
-	}
-
+func (sc *Controller) getServiceReadyNodes(svcKey string) ([]string, error) {
 	sc.podInformersMu.RLock()
 	podInformerFactory, ok := sc.podInformers[svcKey]
 	sc.podInformersMu.RUnlock()
@@ -412,21 +412,21 @@ func (sc *Controller) unsupportedServiceType(svc *corev1.Service) bool {
 	return false
 }
 
-func (sc *Controller) updateServiceIPs(svcName string, svcIPs stringset.StringSet) {
+func (sc *Controller) updateServiceIPs(svcKey string, svcIPs stringset.StringSet) {
 	sc.svcIPsMu.Lock()
 	defer sc.svcIPsMu.Unlock()
 
-	oldIPs := sc.svcIPs[svcName]
+	oldIPs := sc.svcIPs[svcKey]
 	sc.FIPc.ForgetAttachments(oldIPs.Diff(svcIPs))
 }
 
-func (sc *Controller) forgetServiceIPs(svcName string) {
+func (sc *Controller) forgetServiceIPs(svcKey string) {
 	sc.svcIPsMu.Lock()
 	defer sc.svcIPsMu.Unlock()
 
-	sc.FIPc.ForgetAttachments(sc.svcIPs[svcName])
+	sc.FIPc.ForgetAttachments(sc.svcIPs[svcKey])
 
-	delete(sc.svcIPs, svcName)
+	delete(sc.svcIPs, svcKey)
 }
 
 func getLoadbalancerIPs(svc *corev1.Service) stringset.StringSet {
