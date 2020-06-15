@@ -55,7 +55,6 @@ func (fc *Controller) Run() {
 // AttachToNode adds a FIP-to-node attachment to our worldview and immediately attempts to reconcile it with hcloud's
 func (fc *Controller) AttachToNode(svcIPs stringset.StringSet, node string) {
 	fc.attMu.Lock()
-	defer fc.attMu.Unlock()
 
 	var changedAttachment bool
 	for ip := range svcIPs {
@@ -64,6 +63,8 @@ func (fc *Controller) AttachToNode(svcIPs stringset.StringSet, node string) {
 			changedAttachment = true
 		}
 	}
+
+	fc.attMu.Unlock()
 
 	if changedAttachment {
 		_, err := fc.syncFloatingIPs()
