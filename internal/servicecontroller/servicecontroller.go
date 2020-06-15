@@ -164,6 +164,7 @@ func (sc *Controller) addPodInformer(svc *corev1.Service) error {
 	podInformerFactory := informers.NewSharedInformerFactoryWithOptions(
 		sc.K8S,
 		time.Duration(config.Global.SyncSeconds)*time.Second,
+		informers.WithNamespace(svc.Namespace),
 		informers.WithTweakListOptions(func(listOpts *metav1.ListOptions) {
 			listOpts.LabelSelector = labels.Set(svc.Spec.Selector).String()
 		}),
