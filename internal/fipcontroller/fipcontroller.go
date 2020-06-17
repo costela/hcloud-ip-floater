@@ -64,6 +64,7 @@ func (fc *Controller) AttachToNode(svcIPs stringset.StringSet, node string) {
 		}
 	}
 
+	// this cannot be deferred since syncFloatingIPs does it's own locking
 	fc.attMu.Unlock()
 
 	if changedAttachment {
@@ -127,7 +128,7 @@ func (fc *Controller) syncFloatingIPs() (bool, error) {
 
 			fc.fips[ip] = fip
 			changedFIPs = true
-		} else if fipServerName(oldFIP) != fc.attachments[ip] {
+		} else if attachment, _ := fc.getAttachment(ip); fipServerName(oldFIP) != attachment {
 			// FIP hasn't changed but attachment doesn't match so let's reconcile
 			changedFIPs = true
 		}
@@ -155,9 +156,7 @@ func (fc *Controller) Reconcile() {
 		defer fc.fipsMu.RUnlock()
 
 		for ip, fip := range fc.fips {
-			fc.attMu.RLock()
-			node, found := fc.attachments[ip]
-			fc.attMu.RUnlock()
+			node, found := fc.getAttachment(ip)
 			if !found {
 				// FIP not known to us; ignore
 				fc.logger.WithFields(logrus.Fields{
@@ -209,6 +208,14 @@ func (fc *Controller) getServiceIPs() stringset.StringSet {
 	}
 
 	return ips
+}
+
+func (fc *Controller) getAttachment(ip string) (string, bool) {
+	fc.attMu.RLock()
+	node, found := fc.attachments[ip]
+	fc.attMu.RUnlock()
+
+	return node, found
 }
 
 func (fc *Controller) attachFIPToNode(fip *hcloud.FloatingIP, node string) error {
