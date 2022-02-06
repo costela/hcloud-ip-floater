@@ -13,6 +13,7 @@ import (
 
 	"github.com/costela/hcloud-ip-floater/internal/config"
 	"github.com/costela/hcloud-ip-floater/internal/fipcontroller"
+	"github.com/costela/hcloud-ip-floater/internal/manualcontroller"
 	"github.com/costela/hcloud-ip-floater/internal/servicecontroller"
 )
 
@@ -79,8 +80,16 @@ func main() {
 		FIPc:   fipc,
 	}
 
+	mc := manualcontroller.Controller{
+		Logger: logger,
+		K8S:    k8s,
+		SVCc:   &sc,
+		FIPc:   fipc,
+	}
+
 	go fipc.Run()
 	go sc.Run()
+	go mc.Run()
 
 	select {}
 }

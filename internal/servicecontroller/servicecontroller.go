@@ -422,6 +422,18 @@ func (sc *Controller) forgetServiceIPs(svcKey string) {
 	delete(sc.svcIPs, svcKey)
 }
 
+func (sc *Controller) HasServiceIP(ip string) bool {
+	sc.svcIPsMu.Lock()
+	defer sc.svcIPsMu.Unlock()
+
+	for _, ips := range sc.svcIPs {
+		if ips.Has(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 func getLoadbalancerIPs(svc *corev1.Service) stringset.StringSet {
 	ips := make(stringset.StringSet, len(svc.Status.LoadBalancer.Ingress))
 
