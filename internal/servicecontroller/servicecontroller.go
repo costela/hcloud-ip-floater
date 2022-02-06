@@ -19,6 +19,7 @@ import (
 	"github.com/costela/hcloud-ip-floater/internal/config"
 	"github.com/costela/hcloud-ip-floater/internal/fipcontroller"
 	"github.com/costela/hcloud-ip-floater/internal/stringset"
+	"github.com/costela/hcloud-ip-floater/internal/utils"
 )
 
 type podInformerType struct {
@@ -267,7 +268,7 @@ func (sc *Controller) handleNewPod(svcKey string, newPod *corev1.Pod) error {
 		"pod":       newPod.Name,
 	})
 
-	if !podIsReady(newPod) {
+	if !utils.PodIsReady(newPod) {
 		funcLogger.Debug("ignoring non-ready pod")
 		return nil
 	}
@@ -288,8 +289,8 @@ func (sc *Controller) handlePodUpdate(svcKey string, oldPod, newPod *corev1.Pod)
 		"pod":       newPod.Name,
 	})
 
-	oldReady := podIsReady(oldPod)
-	newReady := podIsReady(newPod)
+	oldReady := utils.PodIsReady(oldPod)
+	newReady := utils.PodIsReady(newPod)
 
 	if oldReady == newReady {
 		funcLogger.Debug("pod readiness unchanged")
@@ -318,15 +319,6 @@ func (sc *Controller) getServiceFromKey(svcKey string) (*corev1.Service, error) 
 	}
 
 	return svc, nil
-}
-
-func podIsReady(pod *corev1.Pod) bool {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
 }
 
 func (sc *Controller) handleServiceIPs(svc *corev1.Service, svcIPs stringset.StringSet) error {
@@ -393,7 +385,7 @@ func (sc *Controller) getServiceReadyNodes(svcKey string) ([]string, error) {
 
 	nodes := make([]string, 0, len(pods))
 	for _, pod := range pods {
-		if podIsReady(pod) {
+		if utils.PodIsReady(pod) {
 			nodes = append(nodes, pod.Spec.NodeName)
 		}
 	}
