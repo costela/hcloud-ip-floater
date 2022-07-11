@@ -7,7 +7,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20191027212112-611e8accdfc9 // indirect
 	github.com/googleapis/gnostic v0.3.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
-	github.com/hetznercloud/hcloud-go v1.35.0
+	github.com/hetznercloud/hcloud-go v1.35.1
 	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/pflag v1.0.5 // indirect
