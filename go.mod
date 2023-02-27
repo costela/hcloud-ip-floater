@@ -13,7 +13,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stevenroose/gonfig v0.1.5
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
-	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
+	golang.org/x/sync v0.1.0
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.0.0-20191004102349-159aefb8556b
