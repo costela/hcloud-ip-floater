@@ -20,10 +20,17 @@ spec:
       serviceAccountName: hcloud-ip-floater
       containers:
         - name: hcloud-ip-floater
-          image: costela/hcloud-ip-floater  # tag provided in kustomization.yaml
+          image: ghcr.io/costela/hcloud-ip-floater  # tag provided in kustomization.yaml
           envFrom:
             - secretRef:
                 name: hcloud-ip-floater-secret-env
             - configMapRef:
                 name: hcloud-ip-floater-config-env
                 optional: true
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
