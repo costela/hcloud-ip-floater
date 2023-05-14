@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  # NOTE: if we expand this beyond tags, we must also update the steps below
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: docker/setup-qemu-action@v1
+      - id: buildx
+        uses: docker/setup-buildx-action@v1
+      - uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: gen_metadata
+        uses: docker/metadata-action@v3
+        with:
+          images: ghcr.io/costela/hcloud-ip-floater
+          tags: type=semver,pattern={{version}}
+      - uses: docker/build-push-action@v2
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true # we're only operating on tags
+          tags: ${{ steps.gen_metadata.outputs.tags }}
+          labels: ${{ steps.gen_metadata.outputs.labels }}
