@@ -6,7 +6,7 @@ require (
 	github.com/hetznercloud/hcloud-go v1.50.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stevenroose/gonfig v0.1.5
-	golang.org/x/sync v0.3.0
+	golang.org/x/sync v0.4.0
 	k8s.io/api v0.0.0-20191004102349-159aefb8556b
 	k8s.io/apimachinery v0.0.0-20191004074956-c5d2f014d689
 	k8s.io/client-go v11.0.0+incompatible
