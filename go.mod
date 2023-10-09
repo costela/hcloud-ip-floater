@@ -3,7 +3,7 @@ module github.com/costela/hcloud-ip-floater
 go 1.20
 
 require (
-	github.com/hetznercloud/hcloud-go v1.50.0
+	github.com/hetznercloud/hcloud-go v1.51.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stevenroose/gonfig v0.1.5
 	golang.org/x/sync v0.3.0
