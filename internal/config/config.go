@@ -4,6 +4,7 @@ var Global struct {
 	LogLevel              string `id:"log-level" short:"l" desc:"verbosity level for logs" default:"warn"`
 	HCloudToken           string `id:"hcloud-token" desc:"API token for HCloud access"`
 	ServiceLabelSelector  string `id:"service-label-selector" desc:"label selector used to match services" default:"hcloud-ip-floater.cstl.dev/ignore!=true"`
+	ManualAssignmentLabel string `id:"manual-assignment-label" desc:"pod label used to assign an IP without a service" default:"hcloud-ip-floater.cstl.dev/floating-ip"`
 	FloatingLabelSelector string `id:"floating-label-selector" desc:"label selector used to match floating IPs" default:""`
 
 	// optional MetalLB integration

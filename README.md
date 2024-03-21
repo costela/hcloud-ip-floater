@@ -43,15 +43,38 @@ Either as command line arguments or environment variables.
 
 API token for hetzner cloud access.
 
-### `--service-label-selector` or `HCLOUD_IP_FLOATER_SERVICE_LABEL_SELECTOR` 
+### `--service-label-selector` or `HCLOUD_IP_FLOATER_SERVICE_LABEL_SELECTOR`
 
 Service label selector to use when watching for kubernetes services. Any services that do not match this selector will be ignored by the controller.
 
 **Default**: `hcloud-ip-floater.cstl.dev/ignore!=true`
 
+### `--manual-assignment-label` or `HCLOUD_IP_FLOATER_MANUAL_ASSIGNMENT_LABEL`
+
+This is experimental and hasn't seen a lot of production use!
+
+Label name used to manually assign floating IPs on a Pod.
+
+This can be useful when other means of routing the traffic to a pod than a load balancer are used. E.g. you could be using the [`ipvlan` CNI plugin](https://www.cni.dev/plugins/current/main/ipvlan/) with [Multus](https://github.com/k8snetworkplumbingwg/multus-cni/).
+The label accepts a comma-seperated list of floating IP addresses to assign to the node the pod is on.
+
+Example:
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+  labels:
+    hcloud-ip-floater.cstl.dev/floating-ip: "1.2.3.4,2.3.4.5"
+```
+
+This mechanism will be ignored if there is a service with the same IP present.
+
+**Default**: `hcloud-ip-floater.cstl.dev/floating-ip`
+
 ### `--floating-label-selector` or `HCLOUD_IP_FLOATER_FLOATING_LABEL_SELECTOR`
 
-Label selector for hcloud floating IPs. Floating IPs that do not match this selector will be ignored by the controller. 
+Label selector for hcloud floating IPs. Floating IPs that do not match this selector will be ignored by the controller.
 
 **Default**: `hcloud-ip-floater.cstl.dev/ignore!=true`
 
