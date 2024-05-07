@@ -8,7 +8,7 @@ require (
 	github.com/stevenroose/gonfig v0.1.5
 	golang.org/x/sync v0.7.0
 	k8s.io/api v0.0.0-20191004102349-159aefb8556b
-	k8s.io/apimachinery v0.0.0-20191004074956-c5d2f014d689
+	k8s.io/apimachinery v0.16.13
 	k8s.io/client-go v11.0.0+incompatible
 )
 
@@ -19,6 +19,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/gofuzz v1.0.0 // indirect
 	github.com/googleapis/gnostic v0.3.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
